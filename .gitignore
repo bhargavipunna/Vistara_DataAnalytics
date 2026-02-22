@@ -39,3 +39,6 @@ cache/
 # =====================
 dist/
 build/
+
+backend/init_db.py
+backend/scripts/seed_data.py

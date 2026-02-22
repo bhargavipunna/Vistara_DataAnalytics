@@ -6,9 +6,16 @@ Connects to PostgreSQL database and provides JSON data to frontend
 from fastapi import FastAPI, Query, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
 from datetime import datetime, timedelta
+from contextlib import asynccontextmanager
 import logging
 import os  # ← Add this import
+import sys
+from pathlib import Path
+
+# Add parent directory to path to import ml modules
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from ml.insights import *
 from ml.forecast import next_month_forecast
@@ -22,14 +29,25 @@ try:
     )
 except ImportError:
     # Fallback if module structure is different
-    import sys
-    import os
     sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     from scripts.dashboard_api import (
         get_dashboard_data, 
         get_dashboard_data_optimized,
         get_dashboard_data_legacy
     )
+
+# Import Admin Panel routes
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from routes.news import router as news_router
+from routes.team import router as team_router
+from routes.partners import router as partners_router
+from routes.careers import router as careers_router
+from routes.upload import router as upload_router
+from routes.schools import router as schools_router
+
+# Import scheduler dependencies
+from apscheduler.schedulers.background import BackgroundScheduler
+from agent import FinalDonationReportAgent
 
 # Setup logging
 logging.basicConfig(
@@ -38,22 +56,10 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-
-from apscheduler.schedulers.background import BackgroundScheduler
-from contextlib import asynccontextmanager
-
-# Import your existing class
-from agent import FinalDonationReportAgent
-
-# Setup Logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("api")
-
 # Initialize the Agent
 agent = FinalDonationReportAgent()
 
 # --- AUTOMATIC CLEANUP SCHEDULER ---
-# This runs every day to delete files older than 30 days
 scheduler = BackgroundScheduler()
 
 def scheduled_cleanup():
@@ -62,7 +68,6 @@ def scheduled_cleanup():
     logger.info(f"Cleanup complete. Deleted {deleted_count} old reports.")
 
 # --- LIFESPAN MANAGER ---
-# This starts the scheduler when the server starts
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
@@ -71,6 +76,39 @@ async def lifespan(app: FastAPI):
     yield
     # Shutdown
     scheduler.shutdown()
+
+# Create FastAPI app with lifespan
+app = FastAPI(
+    title="Vistara Analytics API",
+    description="Dashboard analytics API for trust/foundation donations with period-based filtering and admin panel",
+    version="3.0.0",
+    lifespan=lifespan,
+    docs_url="/docs",
+    redoc_url="/redoc"
+)
+
+# Add CORS middleware to allow frontend requests
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allow all origins - restrict in production
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["*"],
+    expose_headers=["*"]
+)
+
+# Include Admin Panel routers
+app.include_router(news_router)
+app.include_router(team_router)
+app.include_router(partners_router)
+app.include_router(careers_router)
+app.include_router(upload_router)
+app.include_router(schools_router)
+
+# Setup static files for uploads
+UPLOAD_DIR = os.getenv("UPLOAD_DIR", "uploads")
+Path(UPLOAD_DIR).mkdir(parents=True, exist_ok=True)
+app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 
 # --- ENDPOINTS ---
 app = FastAPI(
@@ -659,23 +697,36 @@ def root():
     """Root endpoint with API information"""
     return {
         "message": "Vistara Analytics API",
-        "version": "2.0.0",
+        "version": "3.0.0",
         "endpoints": {
-            "dashboard": "/api/dashboard?period=weekly|monthly|yearly|all",
-            "dashboard_custom": "/api/dashboard/custom?start_date=YYYY-MM-DD&end_date=YYYY-MM-DD",
-            "dashboard_kpis": "/api/dashboard/kpis",
-            "dashboard_trend": "/api/dashboard/trend",
-            "dashboard_schools": "/api/dashboard/schools",
-            "dashboard_campaigns": "/api/dashboard/campaigns",
-            "dashboard_payment_modes": "/api/dashboard/payment-modes",
-            "available_periods": "/api/dashboard/periods",
-            "ai_insights": "/api/ai-insights",
-            "ai_insights_complete": "/api/ai-insights-complete",
-            "forecast": "/api/forecast",
-            "health": "/health",
-            "documentation": "/docs"
+            "admin_panel": {
+                "news": "/api/news",
+                "team": "/api/team",
+                "partners": "/api/partners",
+                "careers": "/api/careers",
+                "upload": "/api/upload/image, /api/upload/document"
+            },
+            "analytics": {
+                "dashboard": "/api/dashboard?period=weekly|monthly|yearly|all",
+                "dashboard_custom": "/api/dashboard/custom?start_date=YYYY-MM-DD&end_date=YYYY-MM-DD",
+                "dashboard_kpis": "/api/dashboard/kpis",
+                "dashboard_trend": "/api/dashboard/trend",
+                "dashboard_schools": "/api/dashboard/schools",
+                "dashboard_campaigns": "/api/dashboard/campaigns",
+                "dashboard_payment_modes": "/api/dashboard/payment-modes",
+                "available_periods": "/api/dashboard/periods"
+            },
+            "ai_ml": {
+                "ai_insights": "/api/ai-insights",
+                "ai_insights_complete": "/api/ai-insights-complete",
+                "forecast": "/api/forecast"
+            },
+            "system": {
+                "health": "/health",
+                "documentation": "/docs"
+            }
         },
-        "description": "Analytics API for donation data with period-based filtering"
+        "description": "Analytics API for donation data with admin panel CRUD operations"
     }
 
 # Error handlers
