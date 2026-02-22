@@ -44,6 +44,8 @@ from routes.partners import router as partners_router
 from routes.careers import router as careers_router
 from routes.upload import router as upload_router
 from routes.schools import router as schools_router
+from routes.submissions import router as submissions_router
+from routes.media_coverage import router as media_coverage_router
 
 # Import scheduler dependencies
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -104,6 +106,8 @@ app.include_router(partners_router)
 app.include_router(careers_router)
 app.include_router(upload_router)
 app.include_router(schools_router)
+app.include_router(submissions_router)
+app.include_router(media_coverage_router)
 
 # Setup static files for uploads
 UPLOAD_DIR = os.getenv("UPLOAD_DIR", "uploads")
@@ -111,24 +115,6 @@ Path(UPLOAD_DIR).mkdir(parents=True, exist_ok=True)
 app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 
 # --- ENDPOINTS ---
-app = FastAPI(
-    title="Vistara Analytics API",
-    description="Dashboard analytics API for trust/foundation donations with period-based filtering",
-    version="2.0.0",
-    lifespan=lifespan,
-    docs_url="/docs",
-    redoc_url="/redoc"
-)
-
-# Add CORS middleware to allow frontend requests
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # Allow all origins - restrict in production
-    allow_credentials=True,
-    allow_methods=["GET", "POST", "OPTIONS"],
-    allow_headers=["*"],
-    expose_headers=["*"]
-)
 
 @app.get("/reports/weekly")
 def get_weekly_report():
