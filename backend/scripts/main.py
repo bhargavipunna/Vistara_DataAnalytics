@@ -42,6 +42,7 @@ app = FastAPI(
     title="Vistara Analytics API",
     description="Dashboard analytics API for trust/foundation donations with period-based filtering",
     version="2.0.0",
+    lifespan=lifespan,
     docs_url="/docs",
     redoc_url="/redoc"
 )
@@ -131,14 +132,6 @@ def get_yearly_report(year: int):
         logger.error(f"Error generating yearly report: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
     
-# CORS middleware
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 
 @app.get("/api/dashboard")
 def dashboard(

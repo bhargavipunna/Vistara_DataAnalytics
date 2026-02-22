@@ -1,9 +1,11 @@
 import pandas as pd
 from sqlalchemy import create_engine
 
-engine = create_engine(
-    "postgresql+psycopg2://bhargavi:bindu@localhost:5432/vistara_analytics"
-)
+import os
+
+DATABASE_URL = os.getenv("DATABASE_URL")
+engine = create_engine(DATABASE_URL)
+
 
 # ---------- BASE DATA ----------
 def load_data():

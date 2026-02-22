@@ -3,9 +3,11 @@ from sqlalchemy import create_engine
 from sklearn.linear_model import LinearRegression
 import numpy as np
 
-engine = create_engine(
-    "postgresql+psycopg2://bhargavi:bindu@localhost:5432/vistara_analytics"
-)
+import os
+
+DATABASE_URL = os.getenv("DATABASE_URL")
+engine = create_engine(DATABASE_URL)
+
 
 # --------------------------------
 # LOAD MONTHLY DATA

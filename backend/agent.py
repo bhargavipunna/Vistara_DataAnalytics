@@ -13,6 +13,7 @@ NEW FEATURES:
 - Automatic 7-day cleanup for weekly/monthly reports
 - Permanent storage for yearly reports
 - Redis cache with TTL-based expiration
+- AWS S3 storage with lifecycle (ENABLED)
 """
 
 import os
@@ -70,7 +71,7 @@ class ReportCache:
     generated_at: str
     file_path: str
     data_fingerprint: str
-    version: str = "10.0.0"
+    version: str = "11.0.0"
 
     def to_dict(self) -> dict:
         return {
@@ -96,12 +97,12 @@ class ReportCache:
             generated_at=data['generated_at'],
             file_path=data['file_path'],
             data_fingerprint=data['data_fingerprint'],
-            version=data.get('version', '10.0.0')
+            version=data.get('version', '11.0.0')
         )
 
 # ==================== ULTRA PROFESSIONAL DONATION REPORT AGENT ====================
 class FinalDonationReportAgent:
-    VERSION = "10.0.0"
+    VERSION = "11.0.0"
 
     def __init__(self, db_url: str = None, logo_path: str = None,
                  redis_host: str = None, redis_port: int = None,
@@ -125,18 +126,20 @@ class FinalDonationReportAgent:
         else:
             logger.warning("Redis cache disabled - No caching available")
 
-        # S3 Storage (optional)
-        # self.use_s3 = os.getenv("USE_S3", "false").lower() == "true"
-        # self.s3_bucket = os.getenv("AWS_S3_BUCKET")
-        # self.s3_client = None
+        # S3 Storage (NOW ENABLED)
+        self.use_s3 = os.getenv("USE_S3", "false").lower() == "true"
+        self.s3_bucket = os.getenv("S3_BUCKET_NAME")
+        self.s3_client = None
 
-        # if self.use_s3 and self.s3_bucket:
-        #     self.s3_client = self._get_s3_client()
-        #     if self.s3_client:
-        #         logger.info(f"S3 enabled: {self.s3_bucket}")
+        if self.use_s3 and self.s3_bucket:
+            self.s3_client = self._get_s3_client()
+            if self.s3_client:
+                logger.info(f"S3 enabled: {self.s3_bucket}")
+                logger.info("Lifecycle: Files auto-delete after 7 days")
 
-        # if not self.s3_client and self.use_s3:
-        #     logger.warning("S3 requested but unavailable — using local storage")
+        if not self.s3_client and self.use_s3:
+            logger.warning("S3 requested but unavailable — using local storage")
+
         # Database configuration
         self.db_url = db_url or self._build_db_url()
         self.engine = self._create_engine()
@@ -308,7 +311,7 @@ class FinalDonationReportAgent:
         Validation:
         1. Version must match
         2. Data fingerprint must match (detects ANY DB change)
-        3. PDF file must exist on disk
+        3. PDF file must exist on disk OR S3
         4. Weekly/Monthly: expire after 7 days
         5. Yearly: keep for 30 days (past years never change)
         """
@@ -352,8 +355,16 @@ class FinalDonationReportAgent:
             self._evict_cache(cache_key, using_pickle)
             return None
 
-        # ── Validate file still on disk ──────────────────────────────────────
+        # ── Validate file still exists (disk or S3) ──────────────────────────
         file_path = cache_data.get("file_path", "")
+        
+        # Check if it's an S3 URL
+        if file_path.startswith('http'):
+            # S3 URL - just return it
+            logger.info(f"Cache hit (S3) — returning URL")
+            return file_path
+        
+        # Check if local file exists
         if not file_path or not Path(file_path).exists():
             logger.info("Cached PDF missing from disk, regenerating")
             self._evict_cache(cache_key, using_pickle)
@@ -364,7 +375,7 @@ class FinalDonationReportAgent:
             generated_at = datetime.fromisoformat(cache_data["generated_at"])
             age_days = (datetime.now() - generated_at).days
             if age_days >= 7:
-                logger.info(f"🗑️  Cache expired ({age_days} days old), deleting")
+                logger.info(f"Cache expired ({age_days} days old), deleting")
                 self._evict_cache(cache_key, using_pickle, delete_file=True,
                                   file_path=file_path)
                 return None
@@ -383,7 +394,8 @@ class FinalDonationReportAgent:
                 pass
         self._pickle_delete(cache_key)
 
-        if delete_file and file_path:
+        # Don't delete S3 files (lifecycle handles it)
+        if delete_file and file_path and not file_path.startswith('http'):
             try:
                 Path(file_path).unlink()
                 logger.info(f"Deleted expired file: {file_path}")
@@ -416,7 +428,7 @@ class FinalDonationReportAgent:
             "start_date":       start_date,
             "end_date":         end_date,
             "generated_at":     datetime.now().isoformat(),
-            "file_path":        file_path,
+            "file_path":        file_path,  # Can be local path or S3 URL
             "data_fingerprint": data_fingerprint,
             "version":          self.VERSION,
         }
@@ -459,6 +471,7 @@ class FinalDonationReportAgent:
         Rules:
         - Weekly/Monthly reports older than 7 days: DELETE
         - Yearly reports: KEEP (past years are permanent)
+        - S3 files are handled by lifecycle rules
         """
         try:
             cutoff_date = datetime.now() - timedelta(days=7)
@@ -494,7 +507,7 @@ class FinalDonationReportAgent:
             redis_url = os.getenv("REDIS_URL", "").strip()
 
             if redis_url:
-                logger.info(f"Connecting to Redis via URL...")
+                logger.info(f"🔌 Connecting to Redis via URL...")
 
                 # Upstash uses rediss:// (TLS). Enforce correct SSL params.
                 is_tls = redis_url.startswith("rediss://")
@@ -589,70 +602,69 @@ class FinalDonationReportAgent:
         if cache_key in store:
             del store[cache_key]
             self._pickle_save(store)
-    # # ==================== S3 STORAGE (OPTIONAL) ====================
-    # def _get_s3_client(self):
-    #     """Initialize S3 client (supports both standard AWS and Lab accounts)"""
-    #     try:
-    #         import boto3
             
-    #         session_token = os.getenv("AWS_SESSION_TOKEN")
-            
-    #         if session_token:
-    #             # AWS Lab/Academy account with session token
-    #             s3 = boto3.client(
-    #                 's3',
-    #                 aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
-    #                 aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
-    #                 aws_session_token=session_token,
-    #                 region_name=os.getenv("AWS_REGION", "us-east-1")
-    #             )
-    #         else:
-    #             # Standard AWS account
-    #             s3 = boto3.client(
-    #                 's3',
-    #                 aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
-    #                 aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
-    #                 region_name=os.getenv("AWS_REGION", "us-east-1")
-    #             )
-            
-    #         # Test connection
-    #         s3.head_bucket(Bucket=self.s3_bucket)
-    #         logger.info(f"S3 connection verified: {self.s3_bucket}")
-    #         return s3
-            
-    #     except ImportError:
-    #         logger.info("boto3 not installed — run: pip install boto3")
-    #         return None
-    #     except Exception as e:
-    #         logger.warning(f"S3 connection failed: {e}")
-    #         return None
+    # ==================== S3 STORAGE ====================
+    def _get_s3_client(self):
+        """Initialize S3 client using AWS default credential chain (IAM Role / env / config)"""
+        try:
+            import boto3
 
-    # def _upload_to_s3(self, local_path: str) -> Optional[str]:
-    #     """Upload generated PDF to S3"""
-    #     if not self.s3_client:
-    #         return None
+            # IMPORTANT: Do NOT pass access keys explicitly
+            s3 = boto3.client(
+                "s3",
+                region_name=os.getenv("AWS_REGION", "ap-southeast-2")
+            )
+
+            # Test connection
+            s3.head_bucket(Bucket=self.s3_bucket)
+            logger.info(f"S3 connection verified: {self.s3_bucket}")
+            return s3
+
+        except ImportError:
+            logger.error("boto3 not installed — run: pip install boto3")
+            return None
+        except Exception as e:
+            logger.error(f"S3 connection failed: {e}")
+            return None
+
+    def _upload_to_s3(self, local_path: str) -> Optional[str]:
+        """Upload generated PDF to S3 and return presigned URL"""
+        if not self.s3_client:
+            logger.warning("S3 client not initialized")
+            return None
+
+        try:
+            filename = Path(local_path).name
+            s3_key = f"reports/{filename}"
+
+            # Upload file
+            self.s3_client.upload_file(
+                local_path,
+                self.s3_bucket,
+                s3_key,
+                ExtraArgs={
+                    "ContentType": "application/pdf",
+                    "ServerSideEncryption": "AES256"
+                }
+            )
+
+            # Generate presigned URL (7 days)
+            s3_url = self.s3_client.generate_presigned_url(
+                "get_object",
+                Params={
+                    "Bucket": self.s3_bucket,
+                    "Key": s3_key
+                },
+                ExpiresIn=604800  # 7 days
+            )
+
+            logger.info(f"Uploaded to S3: {s3_key}")
+            return s3_url
+
+        except Exception as e:
+            logger.error(f"S3 upload failed: {e}")
+            return None
             
-    #     try:
-    #         filename = Path(local_path).name
-    #         s3_key = f"reports/{filename}"
-            
-    #         self.s3_client.upload_file(
-    #             local_path,
-    #             self.s3_bucket,
-    #             s3_key,
-    #             ExtraArgs={
-    #                 'ContentType': 'application/pdf',
-    #                 'ServerSideEncryption': 'AES256'  # Encrypt at rest
-    #             }
-    #         )
-            
-    #         s3_url = f"https://{self.s3_bucket}.s3.amazonaws.com/{s3_key}"
-    #         logger.info(f"Uploaded to S3: {s3_url}")
-    #         return s3_url
-            
-    #     except Exception as e:
-    #         logger.error(f"S3 upload failed: {e}")
-    #         return None
     # ==================== UTILITY FUNCTIONS ====================
     def _safe_float(self, value: Any) -> float:
         if value is None:
@@ -960,7 +972,11 @@ class FinalDonationReportAgent:
         query = """
         SELECT 
             COALESCE(campaign_name, 'General Fund') as campaign_name,
-            COALESCE(donation_type, 'N/A') as donation_type,
+            CASE 
+                WHEN COUNT(DISTINCT payment_id) > COUNT(DISTINCT (donor_name, donor_email))
+                THEN 'Recurring'
+                ELSE 'One-time'
+            END as donation_type,
             COUNT(DISTINCT payment_id) as donation_count,
             COALESCE(SUM(amount), 0) as total_amount,
             COUNT(DISTINCT (donor_name, donor_email)) as unique_donors
@@ -969,7 +985,7 @@ class FinalDonationReportAgent:
             AND payment_status = 'Success'
             AND campaign_name IS NOT NULL
             AND campaign_name != ''
-        GROUP BY campaign_name, donation_type
+        GROUP BY campaign_name
         ORDER BY total_amount DESC
         LIMIT :limit
         """
@@ -1551,6 +1567,7 @@ class FinalDonationReportAgent:
         4. Lookup Redis cache — valid only if fingerprint matches AND file exists
         5. Cache hit → return cached path instantly
         6. Cache miss / data changed → generate fresh PDF and save to Redis
+        7. If S3 enabled: upload to S3 and cache S3 URL
         """
         try:
             # ── Step 1: Resolve year ONCE ──────────────────────────────────────
@@ -1625,25 +1642,25 @@ class FinalDonationReportAgent:
                 monthly_data   = monthly_data,
             )
 
-            # ── Step 7: Save to Redis ──────────────────────────────────────────
+            # ── Step 7: Upload to S3 (if enabled) ──────────────────────────────
+            final_path = str(output_path)
+            if self.s3_client:
+                s3_url = self._upload_to_s3(str(output_path))
+                if s3_url:
+                    # Use S3 URL in cache instead of local path
+                    final_path = s3_url
+                    logger.info(f"S3 URL available: {s3_url[:80]}...")
+
+            # ── Step 8: Save to Redis ──────────────────────────────────────────
             self._update_cache(
                 report_id, period_type, resolved_year,
-                start_date_str, end_date_key,      # stable key, not timestamp
-                str(output_path), data_fingerprint
+                start_date_str, end_date_key,
+                final_path,  # S3 URL or local path
+                data_fingerprint
             )
-            
 
-            # # ── Step 8: Upload to S3 (if enabled) ──────────────────────────────
-            # if self.s3_client:
-            #     s3_url = self._upload_to_s3(str(output_path))
-            #     if s3_url:
-            #         logger.info(f"S3 URL available: {s3_url}")
-
-            # logger.info(f"Report ready: {output_path}")
-            # return str(output_path)
-
-            logger.info(f"Report ready: {output_path}")
-            return str(output_path)
+            logger.info(f"Report ready: {final_path}")
+            return final_path
 
         except Exception as e:
             logger.error(f"Report generation failed: {e}", exc_info=True)
@@ -1711,8 +1728,8 @@ def main():
     """Command-line interface"""
     print("=" * 80)
     print("VIDYAANIDHI EDUCATIONAL TRUST")
-    print("Ultra Professional Donation Report Generator v10.0")
-    print("Smart Caching + Auto-Cleanup Enabled")
+    print("Ultra Professional Donation Report Generator v11.0")
+    print("Smart Caching + Auto-Cleanup + S3 Storage Enabled")
     print("=" * 80)
     print()
 
@@ -1778,7 +1795,7 @@ def main():
                 confirm = input("Delete reports older than 30 days? (y/N): ").strip().lower()
                 if confirm == 'y':
                     deleted = agent.cleanup_old_reports(30)
-                    print(f"Deleted {deleted} reports\n")
+                    print(f" Deleted {deleted} reports\n")
 
             elif choice == '7':
                 print("\nForce Regenerate (bypassing cache):")
@@ -1805,14 +1822,14 @@ def main():
                     print(f"Fresh {year} report: {path}\n")
 
             elif choice == '8':
-                print("\n👋 Thank you!\n")
+                print("\nThank you!\n")
                 break
 
             else:
                 print("Invalid choice\n")
 
         except Exception as e:
-            print(f"\nError: {e}\n")
+            print(f"\n Error: {e}\n")
 
         input("Press Enter to continue...")
         print()

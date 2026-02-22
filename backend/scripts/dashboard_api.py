@@ -4,13 +4,16 @@ from sqlalchemy import create_engine, text
 from functools import lru_cache
 from datetime import datetime, timedelta
 import logging
+import os
+
+DATABASE_URL = os.getenv("DATABASE_URL")
+engine = create_engine(DATABASE_URL)
+
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-DATABASE_URL = "postgresql+psycopg2://bhargavi:bindu@localhost:5432/vistara_analytics"
-engine = create_engine(DATABASE_URL)
 
 def get_date_filter(period):
     """Helper function to generate date filter SQL based on period"""
