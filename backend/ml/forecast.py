@@ -4,7 +4,8 @@ from sklearn.linear_model import LinearRegression
 import numpy as np
 
 import os
-
+from dotenv import load_dotenv
+load_dotenv()  # loads .env into environment variables
 DATABASE_URL = os.getenv("DATABASE_URL")
 engine = create_engine(DATABASE_URL)
 

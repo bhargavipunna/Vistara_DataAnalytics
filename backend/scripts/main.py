@@ -38,24 +38,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-app = FastAPI(
-    title="Vistara Analytics API",
-    description="Dashboard analytics API for trust/foundation donations with period-based filtering",
-    version="2.0.0",
-    lifespan=lifespan,
-    docs_url="/docs",
-    redoc_url="/redoc"
-)
-
-# Add CORS middleware to allow frontend requests
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # Allow all origins - restrict in production
-    allow_credentials=True,
-    allow_methods=["GET", "POST", "OPTIONS"],
-    allow_headers=["*"],
-    expose_headers=["*"]
-)
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from contextlib import asynccontextmanager
@@ -91,6 +73,24 @@ async def lifespan(app: FastAPI):
     scheduler.shutdown()
 
 # --- ENDPOINTS ---
+app = FastAPI(
+    title="Vistara Analytics API",
+    description="Dashboard analytics API for trust/foundation donations with period-based filtering",
+    version="2.0.0",
+    lifespan=lifespan,
+    docs_url="/docs",
+    redoc_url="/redoc"
+)
+
+# Add CORS middleware to allow frontend requests
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allow all origins - restrict in production
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["*"],
+    expose_headers=["*"]
+)
 
 @app.get("/reports/weekly")
 def get_weekly_report():
