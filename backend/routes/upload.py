@@ -23,7 +23,7 @@ UPLOAD_DIR = os.getenv("UPLOAD_DIR", "uploads")
 USE_S3 = os.getenv("USE_S3", "false").lower() == "true"
 AWS_ACCESS_KEY = os.getenv("AWS_ACCESS_KEY_ID")
 AWS_SECRET_KEY = os.getenv("AWS_SECRET_ACCESS_KEY")
-AWS_REGION = os.getenv("AWS_REGION", "us-east-1")
+AWS_REGION = os.getenv("AWS_REGION", "ap-southeast-2")
 S3_BUCKET = os.getenv("S3_BUCKET_NAME")
 
 # Ensure upload directory exists
@@ -273,8 +273,12 @@ def delete_file(file_id: str, db: Session = Depends(get_db)):
         try:
             s3_client = get_s3_client()
             if s3_client and S3_BUCKET:
-                # Extract key from URL or use stored filename
-                s3_key = f"uploads/{datetime.now().year}/{datetime.now().month}/{db_file.stored_filename}"
+                # Extract S3 key from the stored URL
+                if db_file.s3_url:
+                    # URL format: https://bucket.s3.region.amazonaws.com/uploads/year/month/file
+                    s3_key = db_file.s3_url.split(".amazonaws.com/", 1)[-1]
+                else:
+                    s3_key = f"uploads/{datetime.now().year}/{datetime.now().month}/{db_file.stored_filename}"
                 s3_client.delete_object(Bucket=S3_BUCKET, Key=s3_key)
         except ClientError as e:
             print(f"S3 deletion failed: {e}")

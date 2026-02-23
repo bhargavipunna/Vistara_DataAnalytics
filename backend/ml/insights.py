@@ -96,10 +96,18 @@ def organization_engagement():
     """
     df = pd.read_sql(q, engine).set_index("donor_type")
 
-    org = df.loc["Organization"]["avg_amt"]
-    indiv = df.loc["Individual"]["avg_amt"]
+    # Organisation-level donors may be labelled Corporate, NGO, or Organization
+    org_labels = [l for l in ("Corporate", "NGO", "Organization") if l in df.index]
+    if not org_labels:
+        return 0, 0.0
 
-    return int(org), round(((org / indiv) - 1) * 100, 1)
+    org_avg = df.loc[org_labels, "avg_amt"].mean()
+    indiv_avg = df.loc["Individual"]["avg_amt"] if "Individual" in df.index else org_avg
+
+    if indiv_avg == 0:
+        return int(org_avg), 0.0
+
+    return int(org_avg), round(((org_avg / indiv_avg) - 1) * 100, 1)
 
 
 def repeat_donors():

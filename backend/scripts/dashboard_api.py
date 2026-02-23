@@ -1,7 +1,6 @@
 import pandas as pd
 import numpy as np
 from sqlalchemy import create_engine, text
-from functools import lru_cache
 from datetime import datetime, timedelta
 import logging
 import os
@@ -74,7 +73,6 @@ def safe_to_dict(df):
     
     return result
 
-@lru_cache(maxsize=32)
 def get_dashboard_data(period='monthly'):
     """
     Get dashboard data for the specified period using multiple optimized queries.

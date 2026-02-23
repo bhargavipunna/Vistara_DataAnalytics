@@ -174,13 +174,18 @@ class FinalDonationReportAgent:
 
     # ==================== DATABASE UTILITIES ====================
     def _build_db_url(self) -> str:
-        """Build database URL"""
+        """Build database URL from env vars, or fall back to DATABASE_URL"""
+        db_url = os.getenv("DATABASE_URL")
+        if db_url:
+            return db_url
         host = os.getenv('DB_HOST', 'localhost')
         port = os.getenv('DB_PORT', '5432')
         database = os.getenv('DB_NAME', 'vistara_analytics')
-        user = os.getenv('DB_USER', 'bhargavi')
-        password = os.getenv('DB_PASSWORD', 'bindu')
-        return f"postgresql://{user}:{password}@{host}:{port}/{database}"
+        user = os.getenv('DB_USER', 'postgres')
+        password = os.getenv('DB_PASSWORD', '')
+        if password:
+            return f"postgresql://{user}:{password}@{host}:{port}/{database}"
+        return f"postgresql://{user}@{host}:{port}/{database}"
 
     def _create_engine(self):
         """Create SQLAlchemy engine"""
