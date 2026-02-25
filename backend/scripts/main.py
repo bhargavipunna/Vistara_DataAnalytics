@@ -86,7 +86,8 @@ app = FastAPI(
     version="3.0.0",
     lifespan=lifespan,
     docs_url="/docs",
-    redoc_url="/redoc"
+    redoc_url="/redoc",
+    redirect_slashes=False,
 )
 
 # Add CORS middleware to allow frontend requests
