@@ -108,6 +108,11 @@ class JobApplicationCreate(BaseModel):
     declaration_consent: bool
     declaration_false_info: bool
 
+class JobApplicationStatusUpdate(BaseModel):
+    status: str = Field(..., max_length=50)
+    message: Optional[str] = None
+    send_email: bool = False
+
 class JobApplicationUpdate(BaseModel):
     status: Optional[str] = Field(None, max_length=50)
     notes: Optional[str] = None
@@ -350,6 +355,41 @@ def delete_application(application_id: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail=f"Failed to delete: {str(e)}")
 
 
+@router.post("/applications/{application_id}/status-update", response_model=JobApplicationResponse)
+def update_application_status_and_notify(application_id: str, data: JobApplicationStatusUpdate, db: Session = Depends(get_db)):
+    """Update application status and optionally notify candidate"""
+    app = db.query(JobApplication).filter(JobApplication.id == application_id).first()
+    if not app:
+        raise HTTPException(status_code=404, detail="Application not found")
+    
+    # Update DB status
+    app.status = data.status
+    try:
+        db.commit()
+        db.refresh(app)
+        
+        # Send Email
+        if data.send_email:
+            try:
+                from routes.email_service import send_application_status_update
+                applicant_name = f"{app.first_name or ''} {app.last_name or ''}".strip() or app.name
+                send_application_status_update(
+                    to_email=app.email,
+                    applicant_name=applicant_name,
+                    applicant_id=app.applicant_id or "N/A",
+                    job_title=app.job_title,
+                    status=app.status,
+                    custom_message=data.message or ""
+                )
+            except Exception as email_err:
+                logger.error(f"Failed to send status update email: {str(email_err)}")
+                
+        return app.to_dict()
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to update status: {str(e)}")
+
+
 @router.get("/forms/types/list")
 def get_form_types(db: Session = Depends(get_db)):
     """Get list of unique form types"""
@@ -360,4 +400,15 @@ def get_form_types(db: Session = Depends(get_db)):
 @router.get("/applications/statuses/list")
 def get_application_statuses():
     """Get list of possible application statuses"""
-    return ["new", "reviewing", "shortlisted", "interview_scheduled", "interview_completed", "offer_extended", "hired", "rejected", "withdrawn"]
+    return [
+        "draft", 
+        "submitted", 
+        "under_review", 
+        "shortlisted", 
+        "interview_scheduled", 
+        "interview_completed", 
+        "offer_extended", 
+        "hired", 
+        "rejected", 
+        "withdrawn"
+    ]

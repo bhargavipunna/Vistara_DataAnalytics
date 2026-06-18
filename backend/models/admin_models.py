@@ -344,7 +344,7 @@ class JobApplication(Base):
     declaration_consent = Column(Boolean, default=False)
     declaration_false_info = Column(Boolean, default=False)
     # Status
-    status = Column(String(50), default='new')
+    status = Column(String(50), default='submitted')
     notes = Column(Text)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
