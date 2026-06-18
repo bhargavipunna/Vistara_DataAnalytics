@@ -12,45 +12,57 @@ router = APIRouter(prefix="/api/schools", tags=["schools"])
 
 # Pydantic schemas
 class SchoolCreate(BaseModel):
-    name: str = Field(..., min_length=1, max_length=255)
-    location: str = Field(..., min_length=1, max_length=255)
-    district: str = Field(..., min_length=1, max_length=255)
-    state: str = Field('Telangana', max_length=100)
-    students: int = Field(0, ge=0)
+    ac_name: str = Field(..., min_length=1, max_length=255)
+    mandal_name: str = Field(..., min_length=1, max_length=255)
+    udise_code: str = Field(..., min_length=1, max_length=20)
+    school_name: str = Field(..., min_length=1, max_length=500)
+    category: str = Field(..., min_length=1, max_length=50)
+    management: str = Field(..., min_length=1, max_length=100)
+    location_type: str = Field(..., min_length=1, max_length=50)
+    enrolment_boys: int = Field(0, ge=0)
+    enrolment_girls: int = Field(0, ge=0)
+    enrolment_total: int = Field(0, ge=0)
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    remarks: Optional[str] = None
     image_url: Optional[str] = None
-    description: Optional[str] = None
-    programs_active: Optional[List[str]] = None
-    needs_funding: bool = True
-    adoption_year: Optional[int] = None
     active: bool = True
     order_index: int = Field(0, ge=0)
 
 class SchoolUpdate(BaseModel):
-    name: Optional[str] = Field(None, min_length=1, max_length=255)
-    location: Optional[str] = Field(None, min_length=1, max_length=255)
-    district: Optional[str] = Field(None, min_length=1, max_length=255)
-    state: Optional[str] = Field(None, max_length=100)
-    students: Optional[int] = Field(None, ge=0)
+    ac_name: Optional[str] = Field(None, min_length=1, max_length=255)
+    mandal_name: Optional[str] = Field(None, min_length=1, max_length=255)
+    udise_code: Optional[str] = Field(None, min_length=1, max_length=20)
+    school_name: Optional[str] = Field(None, min_length=1, max_length=500)
+    category: Optional[str] = Field(None, min_length=1, max_length=50)
+    management: Optional[str] = Field(None, min_length=1, max_length=100)
+    location_type: Optional[str] = Field(None, min_length=1, max_length=50)
+    enrolment_boys: Optional[int] = Field(None, ge=0)
+    enrolment_girls: Optional[int] = Field(None, ge=0)
+    enrolment_total: Optional[int] = Field(None, ge=0)
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    remarks: Optional[str] = None
     image_url: Optional[str] = None
-    description: Optional[str] = None
-    programs_active: Optional[List[str]] = None
-    needs_funding: Optional[bool] = None
-    adoption_year: Optional[int] = None
     active: Optional[bool] = None
     order_index: Optional[int] = Field(None, ge=0)
 
 class SchoolResponse(BaseModel):
     id: str
-    name: str
-    location: str
-    district: str
-    state: str
-    students: int
+    ac_name: str
+    mandal_name: str
+    udise_code: str
+    school_name: str
+    category: str
+    management: str
+    location_type: str
+    enrolment_boys: int
+    enrolment_girls: int
+    enrolment_total: int
+    latitude: Optional[float]
+    longitude: Optional[float]
+    remarks: Optional[str]
     image_url: Optional[str]
-    description: Optional[str]
-    programs_active: Optional[List[str]]
-    needs_funding: bool
-    adoption_year: Optional[int]
     active: bool
     order_index: int
     created_at: Optional[str]
@@ -63,8 +75,11 @@ def get_all_schools(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000),
     active: Optional[bool] = None,
-    district: Optional[str] = None,
-    needs_funding: Optional[bool] = None,
+    ac_name: Optional[str] = None,
+    mandal_name: Optional[str] = None,
+    category: Optional[str] = None,
+    management: Optional[str] = None,
+    location_type: Optional[str] = None,
     db: Session = Depends(get_db)
 ):
     """Get all schools with optional filters"""
@@ -72,13 +87,47 @@ def get_all_schools(
     
     if active is not None:
         query = query.filter(School.active == active)
-    if district:
-        query = query.filter(School.district == district)
-    if needs_funding is not None:
-        query = query.filter(School.needs_funding == needs_funding)
+    if ac_name:
+        query = query.filter(School.ac_name == ac_name)
+    if mandal_name:
+        query = query.filter(School.mandal_name == mandal_name)
+    if category:
+        query = query.filter(School.category == category)
+    if management:
+        query = query.filter(School.management == management)
+    if location_type:
+        query = query.filter(School.location_type == location_type)
     
     schools = query.order_by(School.order_index.asc()).offset(skip).limit(limit).all()
     return [school.to_dict() for school in schools]
+
+
+@router.get("/ac-names/list")
+def get_ac_names(db: Session = Depends(get_db)):
+    """Get list of all unique AC names"""
+    ac_names = db.query(School.ac_name).distinct().all()
+    return [a[0] for a in ac_names if a[0]]
+
+
+@router.get("/mandals/list")
+def get_mandals(db: Session = Depends(get_db)):
+    """Get list of all unique mandal names"""
+    mandals = db.query(School.mandal_name).distinct().all()
+    return [m[0] for m in mandals if m[0]]
+
+
+@router.get("/categories/list")
+def get_categories(db: Session = Depends(get_db)):
+    """Get list of all unique categories"""
+    categories = db.query(School.category).distinct().all()
+    return [c[0] for c in categories if c[0]]
+
+
+@router.get("/managements/list")
+def get_managements(db: Session = Depends(get_db)):
+    """Get list of all unique management types"""
+    managements = db.query(School.management).distinct().all()
+    return [m[0] for m in managements if m[0]]
 
 
 @router.get("/{school_id}", response_model=SchoolResponse)
@@ -138,10 +187,3 @@ def delete_school(school_id: str, db: Session = Depends(get_db)):
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Failed to delete school: {str(e)}")
-
-
-@router.get("/districts/list")
-def get_districts(db: Session = Depends(get_db)):
-    """Get list of all unique districts"""
-    districts = db.query(School.district).distinct().all()
-    return [d[0] for d in districts if d[0]]

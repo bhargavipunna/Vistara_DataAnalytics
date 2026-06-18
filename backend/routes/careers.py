@@ -23,6 +23,7 @@ class JobPostingCreate(BaseModel):
     requirements: Optional[List[str]] = None
     benefits: Optional[List[str]] = None
     salary: Optional[str] = Field(None, max_length=100)
+    work_mode: str = Field(default="Hybrid", max_length=50)
     posted_date: DateType | None = None
     closing_date: DateType | None = None
     active: bool = True
@@ -39,6 +40,7 @@ class JobPostingUpdate(BaseModel):
     requirements: Optional[List[str]] = None
     benefits: Optional[List[str]] = None
     salary: Optional[str] = Field(None, max_length=100)
+    work_mode: Optional[str] = Field(None, max_length=50)
     posted_date: DateType | None = None
     closing_date: DateType | None = None
     active: Optional[bool] = None
@@ -56,6 +58,8 @@ class JobPostingResponse(BaseModel):
     requirements: Optional[List[str]]
     benefits: Optional[List[str]]
     salary: Optional[str]
+    requisition_id: str
+    work_mode: Optional[str]
     posted_date: Optional[str]
     closing_date: Optional[str]
     active: bool

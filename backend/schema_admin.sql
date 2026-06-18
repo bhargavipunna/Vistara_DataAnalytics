@@ -54,6 +54,38 @@ CREATE INDEX idx_team_active ON team_members(active);
 CREATE INDEX idx_team_order ON team_members(order_index);
 
 -- ==========================================
+-- SCHOOLS TABLE (AP Government School Data)
+-- ==========================================
+CREATE TABLE IF NOT EXISTS schools (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    ac_name VARCHAR(255) NOT NULL,
+    mandal_name VARCHAR(255) NOT NULL,
+    udise_code VARCHAR(20) NOT NULL UNIQUE,
+    school_name VARCHAR(500) NOT NULL,
+    category VARCHAR(50) NOT NULL,
+    management VARCHAR(100) NOT NULL,
+    location_type VARCHAR(50) NOT NULL,
+    enrolment_boys INTEGER DEFAULT 0,
+    enrolment_girls INTEGER DEFAULT 0,
+    enrolment_total INTEGER DEFAULT 0,
+    latitude DECIMAL(10, 5),
+    longitude DECIMAL(10, 5),
+    remarks TEXT,
+    image_url TEXT,
+    active BOOLEAN DEFAULT TRUE,
+    order_index INTEGER DEFAULT 0,
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_schools_udise ON schools(udise_code);
+CREATE INDEX IF NOT EXISTS idx_schools_ac ON schools(ac_name);
+CREATE INDEX IF NOT EXISTS idx_schools_mandal ON schools(mandal_name);
+CREATE INDEX IF NOT EXISTS idx_schools_category ON schools(category);
+CREATE INDEX IF NOT EXISTS idx_schools_management ON schools(management);
+CREATE INDEX IF NOT EXISTS idx_schools_active ON schools(active);
+
+-- ==========================================
 -- PARTNERS TABLE
 -- ==========================================
 CREATE TABLE IF NOT EXISTS partners (
@@ -169,4 +201,7 @@ CREATE TRIGGER update_jobs_updated_at BEFORE UPDATE ON job_postings
     FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column();
 
 CREATE TRIGGER update_metrics_updated_at BEFORE UPDATE ON impact_metrics 
+    FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column();
+
+CREATE TRIGGER update_schools_updated_at BEFORE UPDATE ON schools 
     FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column();

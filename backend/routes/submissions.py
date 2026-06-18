@@ -3,10 +3,15 @@ Form Submissions + Job Applications CRUD API Routes
 """
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
+from sqlalchemy import text
 from typing import List, Optional
 from pydantic import BaseModel, Field, EmailStr
+from datetime import date as DateType
 from models import get_db
 from models.admin_models import FormSubmission, JobApplication
+import logging
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/submissions", tags=["submissions"])
 
@@ -48,16 +53,60 @@ class FormSubmissionResponse(BaseModel):
 class JobApplicationCreate(BaseModel):
     job_id: str
     job_title: str = Field(..., min_length=1, max_length=255)
+    requisition_id: Optional[str] = None
+    department: Optional[str] = None
+    location: Optional[str] = None
+    employment_type: Optional[str] = None
+    work_mode: Optional[str] = Field(default="Hybrid")
+    # Personal details
     name: str = Field(..., min_length=2, max_length=255)
+    first_name: str = Field(..., min_length=1, max_length=255)
+    last_name: str = Field(..., min_length=1, max_length=255)
+    middle_name: Optional[str] = Field(None, max_length=255)
     email: EmailStr
-    phone: Optional[str] = Field(None, max_length=50)
+    phone: str = Field(..., min_length=10, max_length=50)
+    current_city: str = Field(..., min_length=1, max_length=255)
+    current_state: str = Field(..., min_length=1, max_length=255)
+    date_of_birth: Optional[DateType] = None
+    gender: Optional[str] = Field(None, max_length=20)
+    # Professional info
+    total_experience: str = Field(..., max_length=50)
+    relevant_experience: str = Field(..., max_length=50)
+    notice_period: str = Field(..., max_length=100)
+    current_organization: Optional[str] = Field(None, max_length=255)
+    current_designation: Optional[str] = Field(None, max_length=255)
+    current_ctc: Optional[str] = Field(None, max_length=100)
+    expected_ctc: Optional[str] = Field(None, max_length=100)
+    experience_years: Optional[str] = Field(None, max_length=50)
+    expected_salary: Optional[str] = Field(None, max_length=100)
+    # Education
+    highest_qualification: str = Field(..., max_length=100)
+    degree: str = Field(..., max_length=255)
+    specialization: str = Field(..., max_length=255)
+    college: str = Field(..., max_length=500)
+    graduation_year: int
+    percentage_cgpa: Optional[str] = Field(None, max_length=50)
+    # Resume & links
     resume_url: Optional[str] = None
     cover_letter: Optional[str] = None
     linkedin_url: Optional[str] = None
-    experience_years: Optional[str] = Field(None, max_length=50)
-    current_organization: Optional[str] = Field(None, max_length=255)
-    notice_period: Optional[str] = Field(None, max_length=100)
-    expected_salary: Optional[str] = Field(None, max_length=100)
+    portfolio_url: Optional[str] = None
+    github_url: Optional[str] = None
+    # Role questions
+    why_interested: str = Field(..., max_length=1000)
+    relevant_experience_summary: str = Field(..., max_length=2000)
+    key_strengths: str = Field(..., max_length=1000)
+    # Eligibility
+    authorized_to_work: bool
+    willing_to_relocate: bool
+    previously_interviewed: bool
+    referred_by_employee: bool
+    referrer_name: Optional[str] = Field(None, max_length=255)
+    referrer_id: Optional[str] = Field(None, max_length=100)
+    # Declarations
+    declaration_accurate: bool
+    declaration_consent: bool
+    declaration_false_info: bool
 
 class JobApplicationUpdate(BaseModel):
     status: Optional[str] = Field(None, max_length=50)
@@ -65,18 +114,56 @@ class JobApplicationUpdate(BaseModel):
 
 class JobApplicationResponse(BaseModel):
     id: str
+    applicant_id: Optional[str]
     job_id: str
     job_title: str
+    requisition_id: Optional[str]
+    department: Optional[str]
+    location: Optional[str]
+    employment_type: Optional[str]
+    work_mode: Optional[str]
     name: str
+    first_name: Optional[str]
+    last_name: Optional[str]
+    middle_name: Optional[str]
     email: str
     phone: Optional[str]
+    current_city: Optional[str]
+    current_state: Optional[str]
+    date_of_birth: Optional[str]
+    gender: Optional[str]
+    total_experience: Optional[str]
+    relevant_experience: Optional[str]
+    experience_years: Optional[str]
+    current_organization: Optional[str]
+    current_designation: Optional[str]
+    current_ctc: Optional[str]
+    expected_ctc: Optional[str]
+    notice_period: Optional[str]
+    expected_salary: Optional[str]
+    highest_qualification: Optional[str]
+    degree: Optional[str]
+    specialization: Optional[str]
+    college: Optional[str]
+    graduation_year: Optional[int]
+    percentage_cgpa: Optional[str]
     resume_url: Optional[str]
     cover_letter: Optional[str]
     linkedin_url: Optional[str]
-    experience_years: Optional[str]
-    current_organization: Optional[str]
-    notice_period: Optional[str]
-    expected_salary: Optional[str]
+    portfolio_url: Optional[str]
+    github_url: Optional[str]
+    why_interested: Optional[str]
+    relevant_experience_summary: Optional[str]
+    key_strengths: Optional[str]
+    authorized_to_work: Optional[bool]
+    willing_to_relocate: Optional[bool]
+    previously_interviewed: Optional[bool]
+    referred_by_employee: Optional[bool]
+    referrer_name: Optional[str]
+    referrer_id: Optional[str]
+    declaration_accurate: Optional[bool]
+    declaration_consent: Optional[bool]
+    declaration_false_info: Optional[bool]
     status: str
     notes: Optional[str]
     created_at: Optional[str]
@@ -193,12 +280,38 @@ def get_application(application_id: str, db: Session = Depends(get_db)):
 
 @router.post("/applications", response_model=JobApplicationResponse, status_code=201)
 def create_application(data: JobApplicationCreate, db: Session = Depends(get_db)):
-    """Submit a job application (public endpoint)"""
-    db_app = JobApplication(**data.dict())
+    """Submit a job application (public endpoint) — generates applicant_id and sends confirmation email"""
+    # Generate applicant_id from sequence
+    result = db.execute(text("SELECT nextval('applicant_id_seq')"))
+    seq_val = result.scalar()
+    applicant_id = f"VST-AP-{str(seq_val).zfill(5)}"
+
+    app_data = data.dict()
+    app_data['applicant_id'] = applicant_id
+
+    db_app = JobApplication(**app_data)
     db.add(db_app)
     try:
         db.commit()
         db.refresh(db_app)
+
+        # Send confirmation email (non-blocking — don't fail the request if email fails)
+        try:
+            from routes.email_service import send_application_confirmation
+            send_application_confirmation(
+                to_email=data.email,
+                applicant_name=f"{data.first_name} {data.last_name}",
+                applicant_id=applicant_id,
+                job_title=data.job_title,
+                requisition_id=data.requisition_id or "",
+                department=data.department or "",
+                location=data.location or "",
+                employment_type=data.employment_type or "",
+                work_mode=data.work_mode or "Hybrid",
+            )
+        except Exception as email_err:
+            logger.error(f"Email send failed (non-fatal): {str(email_err)}")
+
         return db_app.to_dict()
     except Exception as e:
         db.rollback()
@@ -247,4 +360,4 @@ def get_form_types(db: Session = Depends(get_db)):
 @router.get("/applications/statuses/list")
 def get_application_statuses():
     """Get list of possible application statuses"""
-    return ["new", "reviewing", "shortlisted", "rejected", "hired"]
+    return ["new", "reviewing", "shortlisted", "interview_scheduled", "interview_completed", "offer_extended", "hired", "rejected", "withdrawn"]
